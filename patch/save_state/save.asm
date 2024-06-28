@@ -32,6 +32,8 @@ start:
   dw $0000|$2181, $0000  ; WRAM addr = $xx0000
   dw $1000|$2183, $00    ; WRAM addr = $7Exxxx  (bank is relative to $7E)
   dw $1000|$420B, $02    ; Trigger DMA on channel 1
+  ; Reload variables from 7E we didn't want to reload from SRAM.
+  dw $0000, .load_after_7E_done
   ; Copy F10000-F1FFFF to WRAM 7F0000-7FFFFF.
   dw $0000|$4312, $0000  ; A addr = $xx0000
   dw $0000|$4314, $00F1  ; A addr = $F1xxxx, size = $xx00
@@ -180,7 +182,7 @@ start:
   ; compare checksum
   lda.l !SS_FULL, x
   beq +
-  cmp.l $00FFDE
+  cmp.l !CHSUM
   beq ++
   inx #6
   bra -
@@ -194,7 +196,7 @@ start:
   sta.l .CS_LOAD_INPUT
 
   ;; change some games to use the hardware button capture
-+ lda.l $00FFDE
++ lda.l !CHSUM
   cmp #$783A : beq .controller_reg_patch ; claymates (US)
   cmp #$06D5 : beq .controller_reg_patch ; claymates (EU)
   cmp #$8FF5 : beq .controller_reg_patch ; FFMQ 1.1 (US)
@@ -283,7 +285,7 @@ start:
 .save_state
   ; check if this is SM
   %a16()
-  lda.l $00FFDE
+  lda.l !CHSUM
   cmp #$F8DF
   bne +
   ; if SM, check return address and make sure it's not in the sound loading code $808159-$808110
@@ -415,7 +417,7 @@ start:
 .load_state
   ; check if this is SM
   %a16()
-  lda.l $00FFDE
+  lda.l !CHSUM
   cmp #$F8DF
   bne +
   ; if SM, check return address and make sure it's not in the sound loading code $808159-$808110
@@ -448,8 +450,30 @@ start:
   plb
   plb
 
-+ ldy #.load_write_table
+  ; Save the RNG value to a location that gets loaded after the RNG value.
+  ; This way, we preserve the RNG value into the loaded state.
+  ; NOTE: Bank set to 00 above.
++ %a16()
+  lda.w !MMX_RNG_VALUE
+  sta.l !MMX_LOAD_TEMP_RNG
+
+  ldy #.load_write_table
+.jmp_run_vm
   jmp .run_vm
+
+.load_after_7E_done
+  ; We enter with 16-bit A/X/Y.
+  ; Skip loading RNG if not Rockman X 1.0 as it doesn't apply.
+  lda.l !CHSUM
+  cmp #$6569
+  bne .jmp_run_vm
+  ; Restore the RNG value with what we saved before.
+  lda.l !MMX_SRAM_CONFIG_KEEPRNG
+  and.w #$00FF
+  bne .jmp_run_vm
+  lda.l !MMX_LOAD_TEMP_RNG
+  sta.l !MMX_RNG_VALUE
+  bra .jmp_run_vm
 
 .load_return
   %ai16()
@@ -472,7 +496,7 @@ start:
   ; compare checksum
   lda.l !SS_FULL, x
   beq +
-  cmp.l $00FFDE
+  cmp.l !CHSUM
   beq ++
   inx #8
   bra -
@@ -640,8 +664,14 @@ start:
   ; A, X and Y are 16-bit at exit.
   ; Return to caller.  The word in the table after the terminator is the
   ; code address to return to.
+  ; Y will be set to the next "instruction" in case resuming the VM
+  ; is desired.
+  iny
+  iny
+  iny
+  iny
   tyx
-  jmp ($0002,x)
+  jmp ($FFFE,x)
 
 print "Savestate Bank Ending at: ", pc
 

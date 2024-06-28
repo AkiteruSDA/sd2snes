@@ -9,6 +9,14 @@
 !SS_CODE = $FC0000
 !SS_DATA = $FC2000
 
+; mmx specific
+!MMX_LOAD_TEMP_RNG = $7F0000 ; Temporary storage for load process.  Overlaps game use.
+!MMX_RNG_VALUE = $7E0BA6
+!MMX_SRAM_CONFIG_KEEPRNG = $E0011E ; Using SD2SNES offset: SRAM starts at $E00000, so $70011E (true) -> $E0011E (SD2SNES)
+
+; misc
+!CHSUM = $00FFDE
+
 ;=======
 ; LOROM
 ;=======
